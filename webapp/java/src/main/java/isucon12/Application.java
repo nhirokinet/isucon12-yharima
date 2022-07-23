@@ -418,7 +418,7 @@ public class Application {
             try {
                 // スコアを登録した参加者のIDを取得する
                 List<String> scoredPlayerIDs = this.jdbcTemplate2.queryForList(
-                    "SELECT DISTINCT(player_id) AS player_id FROM player_score WHERE tenant_id = " + tenantId + " AND competition_id = " + competitionId + " AND deleted=0",
+                    "SELECT DISTINCT(player_id) AS player_id FROM player_score WHERE tenant_id = " + tenantId + " AND competition_id = '" + competitionId + "' AND deleted=0",
                     String.class
                 );
 
@@ -860,7 +860,7 @@ public class Application {
                     // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
                     pss.addAll(
                         this.jdbcTemplate2.query(
-                            "SELECT * FROM player_score WHERE tenant_id = " + v.getTenantId() + " AND competition_id = " + c.getId() + " AND player_id = " + p.getId() + " ORDER BY row_num DESC LIMIT 1",
+                            "SELECT * FROM player_score WHERE tenant_id = " + v.getTenantId() + " AND competition_id = '" + c.getId() + "' AND player_id = '" + p.getId() + "' ORDER BY row_num DESC LIMIT 1",
                             playerScoreRowMapper
                         )
                     );
@@ -938,7 +938,7 @@ public class Application {
                 List<PlayerScoreRow> pss;
                 {
                     pss = this.jdbcTemplate2.query(
-                        "SELECT * FROM player_score WHERE tenant_id = " + tenant.getId() + " AND competition_id = " + competitionId + " AND deleted=0 ORDER BY row_num DESC",
+                        "SELECT * FROM player_score WHERE tenant_id = " + tenant.getId() + " AND competition_id = '" + competitionId + "' AND deleted=0 ORDER BY row_num DESC",
                         playerScoreRowMapper
                     );
                 }
