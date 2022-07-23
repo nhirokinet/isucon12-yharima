@@ -10,6 +10,9 @@ public class PlayerRow {
     private Date createdAt;
     private Date updatedAt;
 
+    public PlayerRow() {
+    }
+
     public PlayerRow(Long tenantId, String id, String displayName, Boolean isDisqualified, Date createdAt, Date updatedAt) {
         super();
         this.tenantId = tenantId;

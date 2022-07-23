@@ -9,7 +9,7 @@ public class CompetitionRow {
     private Date finishedAt;
     private Date createdAt;
     private Date updatedAt;
-
+    
     public CompetitionRow(){
     };
 

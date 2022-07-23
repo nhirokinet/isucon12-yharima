@@ -301,32 +301,30 @@ public class Application {
     }
 
     // 参加者を取得する
-    private PlayerRow retrievePlayer(String id) throws RetrievePlayerException {
-        try {
-            PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM player WHERE id = ?");
-            ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-            ps.setString(1, id);
-            ResultSet rs = ps.executeQuery();
-            if (!rs.isBeforeFirst()) {
-                return null;
-            }
-            return new PlayerRow(
-                    rs.getLong("tenant_id"),
-                    rs.getString("id"),
-                    rs.getString("display_name"),
-                    rs.getBoolean("is_disqualified"),
-                    new Date(rs.getLong("created_at")),
-                    new Date(rs.getLong("updated_at")));
-        } catch (SQLException e) {
-            throw new RetrievePlayerException(String.format("error Select Player: id=%s, ", id), e);
-        }
+    private PlayerRow retrievePlayer(String tenantId, String id) {
+        Map<String, Object> params = new HashMap<String, Object>();
+        params.put("id", id);
+        params.put("tenant_id", tenantId);
+
+        RowMapper<PlayerRow> mapper = (rs, i) -> {
+            PlayerRow row = new PlayerRow();
+            row.setTenantId(rs.getLong("tenant_id"));
+            row.setId(rs.getString("id"));
+            row.setDisplayName(rs.getString("display_name"));
+            row.setIsDisqualified(rs.getBoolean("is_disqualified"));
+            row.setCreatedAt(new Date(rs.getLong("created_at")));
+            row.setUpdatedAt(new Date(rs.getLong("updated_at")));
+            return row;
+        };
+
+        return jdbcTemplate.queryForObject("SELECT * FROM player WHERE id = :id AND tenant_id = :tenant_id", params, mapper);
     }
 
     // 参加者を認可する
     // 参加者向けAPIで呼ばれる
-    private void authorizePlayer(String id) throws AuthorizePlayerException {
+    private void authorizePlayer(String tenantId, String id) throws AuthorizePlayerException {
         try {
-            PlayerRow player = this.retrievePlayer(tenantDb, id);
+            PlayerRow player = this.retrievePlayer(tenantId, id);
             if (player == null) {
                 throw new AuthorizePlayerException(HttpStatus.UNAUTHORIZED, String.format("player not found: id=%s", id));
             }
