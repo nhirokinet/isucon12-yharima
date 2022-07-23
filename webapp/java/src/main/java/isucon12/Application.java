@@ -311,7 +311,7 @@ public class Application {
 
     // 大会を取得する
     private CompetitionRow retrieveCompetition(long tenantId, String id) throws RetrieveCompetitionException {
-        List<CompetitionRow> cr = this.jdbcTemplate2.query("SELECT * FROM competition WHERE id = " + id + " AND tenant_id = " + tenantId, competitionRowMapper);
+        List<CompetitionRow> cr = this.jdbcTemplate2.query("SELECT * FROM competition WHERE id = '" + id + "' AND tenant_id = " + tenantId, competitionRowMapper);
         if(cr.isEmpty()) {
             return null;
         }
