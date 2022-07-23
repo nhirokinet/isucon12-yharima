@@ -447,16 +447,14 @@ public class Application {
         }
 
         SqlParameterSource source = new MapSqlParameterSource()
-                .addValue("tenant_id", tenantId)
                 .addValue("competition_id", comp.getId());
         RowMapper<VisitHistorySummaryRow> mapper = (rs, i) -> {
             VisitHistorySummaryRow row = new VisitHistorySummaryRow();
             row.setPlayerId(rs.getString("player_id"));
-            row.setMinCreatedAt(new Date(rs.getLong("min_created_at")));
             return row;
         };
 
-        String sql = "SELECT player_id FROM visited_users WHERE tenant_id = :tenant_id AND competition_id = :competition_id GROUP BY player_id";
+        String sql = "SELECT player_id FROM visited_user WHERE competition_id = :competition_id";
         List<VisitHistorySummaryRow> vhs;
         try {
             vhs = this.adminDb.query(sql, source, mapper);
@@ -1073,12 +1071,11 @@ public class Application {
                 }
 
                 {
-                    if (this.isValidFinishedAt(comp.getFinishedAt())) {
+                    if (!this.isValidFinishedAt(comp.getFinishedAt())) {
                         SqlParameterSource source = new MapSqlParameterSource()
                                 .addValue("player_id", v.getPlayerId())
-                                .addValue("tenant_id", tenant.getId())
                                 .addValue("competition_id", competitionId);
-                        String sql = "INSERT INTO visited_users (player_id, tenant_id, competition_id) VALUES (:player_id, :tenant_id, :competition_id)";
+                        String sql = "INSERT IGNORE INTO visited_user (player_id, competition_id) VALUES (:player_id, :competition_id)";
                         this.adminDb.update(sql, source);
                     }
                 }

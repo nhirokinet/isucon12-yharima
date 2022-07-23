@@ -10,3 +10,5 @@ create table visited_user (
 )  ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 insert into visited_user (select player_id, visit_history.tenant_id, competition_id, 1 from visit_history left join competition on competition.id=visit_history.competition_id where (finished_at is not null and competition.finished_at >= visit_history.created_at) or finished_at is null group by player_id,visit_history.tenant_id,competition_id);
+
+alter table visited_user delete tenant_id;
