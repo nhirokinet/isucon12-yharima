@@ -595,7 +595,15 @@ public class Application {
             throw new WebException(HttpStatus.FORBIDDEN, "role organizer required");
         }
 
+
+
         try {
+
+
+           PlayerRow p = this.retrievePlayer(v.getTenantId(), playerId);
+            if (p == null) {
+              throw new WebException(HttpStatus.NOT_FOUND, "player not found");
+            }
             long now = new Date().getTime();
             SqlParameterSource source = new MapSqlParameterSource()
                 .addValue("is_disqualified", true)
@@ -605,13 +613,10 @@ public class Application {
             String sql = "UPDATE player SET is_disqualified = :is_disqualified, updated_at = :updated_at WHERE id = :id AND tenant_id = :tenant_id";
             this.jdbcTemplate.update(sql, source);
 
-            PlayerRow p = this.retrievePlayer(v.getTenantId(), playerId);
-            if (p == null) {
-                throw new WebException(HttpStatus.NOT_FOUND, "player not found");
-            }
-
             return new SuccessResult(true, new PlayerDisqualifiedHandlerResult(new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified())));
-        } catch (Exception e) {
+        } catch (WebException e) {
+	  throw e;
+	} catch (Exception e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, String.format("error Update player id=%s: ", playerId), e);
         }
     }
@@ -784,6 +789,8 @@ public class Application {
                 throw new WebException(HttpStatus.BAD_REQUEST, "error Long.valueOf(scoreStr): ", e);
             } catch (DispenseIdException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error dispenseID: ", e);
+	    } catch (WebException e) {
+		throw e;
             } catch (Exception e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb.player_score: ", e);
             }
