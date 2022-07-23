@@ -602,7 +602,7 @@ public class Application {
                 .addValue("updated_at", now)
                 .addValue("id", playerId)
                 .addValue("tenant_id", v.getTenantId());
-            String sql = "UPDATE player SET is_disqualified = :is_disqualified, updated_at = :updated_at WHERE id = :id AND tenant_id = :tenant_id)";
+            String sql = "UPDATE player SET is_disqualified = :is_disqualified, updated_at = :updated_at WHERE id = :id AND tenant_id = :tenant_id";
             this.jdbcTemplate.update(sql, source);
 
             PlayerRow p = this.retrievePlayer(v.getTenantId(), playerId);
