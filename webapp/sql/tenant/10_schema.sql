@@ -1,3 +1,5 @@
+USE `isuports`;
+
 DROP TABLE IF EXISTS competition;
 DROP TABLE IF EXISTS player;
 DROP TABLE IF EXISTS player_score;
