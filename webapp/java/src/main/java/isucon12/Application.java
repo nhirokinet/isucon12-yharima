@@ -476,7 +476,7 @@ public class Application {
             return row;
         };
 
-        String sql = "SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = :tenant_id AND competition_id = :competition_id GROUP BY player_id";
+        String sql = "SELECT player_id FROM visited_users WHERE tenant_id = :tenant_id AND competition_id = :competition_id GROUP BY player_id";
         List<VisitHistorySummaryRow> vhs;
         try {
             vhs = this.adminDb.query(sql, source, mapper);
@@ -486,10 +486,6 @@ public class Application {
 
         Map<String, String> billingMap = new HashMap<>();
         for (VisitHistorySummaryRow vh : vhs) {
-            // competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
-            if (this.isValidFinishedAt(comp.getFinishedAt()) && comp.getFinishedAt().before(vh.getMinCreatedAt())) {
-                continue;
-            }
             billingMap.put(vh.getPlayerId(), "visitor");
         }
 
@@ -1097,14 +1093,14 @@ public class Application {
                 }
 
                 {
-                    SqlParameterSource source = new MapSqlParameterSource()
-                            .addValue("player_id", v.getPlayerId())
-                            .addValue("tenant_id", tenant.getId())
-                            .addValue("competition_id", competitionId)
-                            .addValue("created_at", now.getTime())
-                            .addValue("updated_at", now.getTime());
-                    String sql = "INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (:player_id, :tenant_id, :competition_id, :created_at, :updated_at)";
-                    this.adminDb.update(sql, source);
+                    if (this.isValidFinishedAt(comp.getFinishedAt())) {
+                        SqlParameterSource source = new MapSqlParameterSource()
+                                .addValue("player_id", v.getPlayerId())
+                                .addValue("tenant_id", tenant.getId())
+                                .addValue("competition_id", competitionId);
+                        String sql = "INSERT INTO visited_users (player_id, tenant_id, competition_id) VALUES (:player_id, :tenant_id, :competition_id)";
+                        this.adminDb.update(sql, source);
+                    }
                 }
 
                 List<PlayerScoreRow> pss = new ArrayList<>();
