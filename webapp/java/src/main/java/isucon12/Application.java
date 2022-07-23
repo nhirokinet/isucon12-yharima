@@ -121,6 +121,12 @@ public class Application {
     private static final String TENANT_NAME_REG_PATTERN = "^[a-z][a-z0-9-]{0,61}[a-z0-9]$";
     private static final int SQLITE_BUSY_TIMEOUT = 5;
 
+    private static long currentMaxID = 0;
+
+    private static synchronized long dispenseIntID() {
+        return ++currentMaxID;
+    }
+
     /*
      * ENV
      *
@@ -175,37 +181,11 @@ public class Application {
 
     // システム全体で一意なIDを生成する
     public String dispenseID() throws DispenseIdException {
-        String lastErrorString = "";
-        GeneratedKeyHolder holder = new GeneratedKeyHolder();
-        SqlParameterSource source = new MapSqlParameterSource().addValue("stub", "a");
-
-        for (int i = 0; i < 100; i++) {
-            try {
-                this.adminDb.update("REPLACE INTO id_generator (stub) VALUES (:stub);", source, holder);
-            } catch (DataAccessException e) {
-                if (e.getRootCause() instanceof SQLException) {
-                    SQLException se = (SQLException) e.getRootCause();
-                    // deadlock
-                    if (se.getErrorCode() == 1213) {
-                        lastErrorString = String.format("error REPLACE INTO id_generator: %s", se.getMessage());
-                        continue;
-                    }
-                }
-                throw new DispenseIdException(String.format("error REPLACE INTO id_generator: %s", e.getMessage()));
-            }
-            if (holder.getKey() == null) {
-                throw new DispenseIdException("error get last insert id");
-            }
-            break;
-        }
-
-        if (holder.getKey().longValue() != 0) {
-            return String.valueOf(holder.getKey().longValue());
-        }
-        throw new DispenseIdException(lastErrorString);
+        return String.valueOf(dispenseIntID());
     }
 
     public static void main(String[] args) {
+        currentMaxID = new java.util.Date().getTime() * 100000;
         SpringApplication.run(Application.class, args);
     }
 
