@@ -105,7 +105,7 @@ import isucon12.model.VisitHistorySummaryRow;
 @RestController
 public class Application {
     @Autowired
-    private NamedParameterJdbcTemplate adminDb;
+    private NamedParameterJdbcTemplate jdbcTemplate;
 
     Logger logger = LoggerFactory.getLogger(Application.class);
 
@@ -137,41 +137,41 @@ public class Application {
     @Value("${ISUCON_ADMIN_HOSTNAME:admin.t.isucon.dev}")
     private String ISUCON_ADMIN_HOSTNAME;
 
-    public String tenantDBPath(long id) {
-        return Paths.get(ISUCON_TENANT_DB_DIR).resolve(String.format("%d.db", id)).toString();
-    }
+//    public String tenantDBPath(long id) {
+//        return Paths.get(ISUCON_TENANT_DB_DIR).resolve(String.format("%d.db", id)).toString();
+//    }
 
-    public Connection connectToTenantDB(long id) throws DatabaseException {
-        String tenantDBPath = this.tenantDBPath(id);
-        if (!new File(tenantDBPath).exists()) {
-            throw new DatabaseException(String.format("failed to open tenant DB: %s", tenantDBPath));
-        }
+//    public Connection connectToTenantDB(long id) throws DatabaseException {
+//        String tenantDBPath = this.tenantDBPath(id);
+//        if (!new File(tenantDBPath).exists()) {
+//            throw new DatabaseException(String.format("failed to open tenant DB: %s", tenantDBPath));
+//        }
+//
+//        try {
+//            return DriverManager.getConnection(String.format("jdbc:log4jdbc:sqlite:%s", tenantDBPath));
+//        } catch (SQLException e) {
+//            throw new DatabaseException(String.format("failed to open tenant DB: %s", e.getMessage()));
+//        }
+//    }
 
-        try {
-            return DriverManager.getConnection(String.format("jdbc:log4jdbc:sqlite:%s", tenantDBPath));
-        } catch (SQLException e) {
-            throw new DatabaseException(String.format("failed to open tenant DB: %s", e.getMessage()));
-        }
-    }
-
-    public void createTenantDB(long id) {
-        String tenantDBPath = this.tenantDBPath(id);
-
-        try {
-            Process p = new ProcessBuilder().command("sh", "-c", String.format("sqlite3 %s < %s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH)).start();
-            int exitCode = p.waitFor();
-            p.destroy();
-            if (exitCode != 0) {
-                InputStreamReader inputStreamReader = new InputStreamReader(p.getErrorStream());
-                Stream<String> streamOfString = new BufferedReader(inputStreamReader).lines();
-                String message = streamOfString.collect(Collectors.joining());
-
-                throw new RuntimeException(String.format("failed to exec sqlite3 %s < %s, out=%s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH, message));
-            }
-        } catch (IOException | InterruptedException e) {
-            throw new RuntimeException(String.format("failed to exec sqlite3 %s < %s, %s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH, e));
-        }
-    }
+//    public void createTenantDB(long id) {
+//        String tenantDBPath = this.tenantDBPath(id);
+//
+//        try {
+//            Process p = new ProcessBuilder().command("sh", "-c", String.format("sqlite3 %s < %s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH)).start();
+//            int exitCode = p.waitFor();
+//            p.destroy();
+//            if (exitCode != 0) {
+//                InputStreamReader inputStreamReader = new InputStreamReader(p.getErrorStream());
+//                Stream<String> streamOfString = new BufferedReader(inputStreamReader).lines();
+//                String message = streamOfString.collect(Collectors.joining());
+//
+//                throw new RuntimeException(String.format("failed to exec sqlite3 %s < %s, out=%s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH, message));
+//            }
+//        } catch (IOException | InterruptedException e) {
+//            throw new RuntimeException(String.format("failed to exec sqlite3 %s < %s, %s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH, e));
+//        }
+//    }
 
     // システム全体で一意なIDを生成する
     public String dispenseID() throws DispenseIdException {
@@ -181,7 +181,7 @@ public class Application {
 
         for (int i = 0; i < 100; i++) {
             try {
-                this.adminDb.update("REPLACE INTO id_generator (stub) VALUES (:stub);", source, holder);
+                this.jdbcTemplate.update("REPLACE INTO id_generator (stub) VALUES (:stub);", source, holder);
             } catch (DataAccessException e) {
                 if (e.getRootCause() instanceof SQLException) {
                     SQLException se = (SQLException) e.getRootCause();
@@ -319,7 +319,7 @@ public class Application {
         };
 
         try {
-            return adminDb.queryForObject("SELECT * FROM tenant WHERE name = :name", source, mapper);
+            return jdbcTemplate.queryForObject("SELECT * FROM tenant WHERE name = :name", source, mapper);
         } catch (EmptyResultDataAccessException e) {
             return null;
         } catch (DataAccessException e) {
@@ -333,7 +333,7 @@ public class Application {
     }
 
     // 参加者を取得する
-    private PlayerRow retrievePlayer(Connection tenantDb, String id) throws RetrievePlayerException {
+    private PlayerRow retrievePlayer(String id) throws RetrievePlayerException {
         try {
             PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM player WHERE id = ?");
             ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
@@ -356,7 +356,7 @@ public class Application {
 
     // 参加者を認可する
     // 参加者向けAPIで呼ばれる
-    private void authorizePlayer(Connection tenantDb, String id) throws AuthorizePlayerException {
+    private void authorizePlayer(String id) throws AuthorizePlayerException {
         try {
             PlayerRow player = this.retrievePlayer(tenantDb, id);
             if (player == null) {
@@ -372,7 +372,7 @@ public class Application {
     }
 
     // 大会を取得する
-    private CompetitionRow retrieveCompetition(Connection tenantDb, String id) throws RetrieveCompetitionException {
+    private CompetitionRow retrieveCompetition(String id) throws RetrieveCompetitionException {
         try {
             PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM competition WHERE id = ?");
             ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
@@ -416,7 +416,7 @@ public class Application {
                 .addValue("updated_at", now.getTime());
         GeneratedKeyHolder holder = new GeneratedKeyHolder();
         try {
-            this.adminDb.update("INSERT INTO tenant (name, display_name, created_at, updated_at) VALUES (:name, :display_name, :created_at, :updated_at)", source, holder);
+            this.jdbcTemplate.update("INSERT INTO tenant (name, display_name, created_at, updated_at) VALUES (:name, :display_name, :created_at, :updated_at)", source, holder);
         } catch (DataAccessException e) {
             if (e.getRootCause() instanceof SQLException) {
                 SQLException se = (SQLException) e.getRootCause();
@@ -455,7 +455,7 @@ public class Application {
         }
     }
 
-    private BillingReport billingReportByCompetition(Connection tenantDb, long tenantId, String competitionId) throws BillingReportByCompetitionException {
+    private BillingReport billingReportByCompetition(long tenantId, String competitionId) throws BillingReportByCompetitionException {
         CompetitionRow comp;
         try {
             comp = this.retrieveCompetition(tenantDb, competitionId);
@@ -479,7 +479,7 @@ public class Application {
         String sql = "SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = :tenant_id AND competition_id = :competition_id GROUP BY player_id";
         List<VisitHistorySummaryRow> vhs;
         try {
-            vhs = this.adminDb.query(sql, source, mapper);
+            vhs = this.jdbcTemplate.query(sql, source, mapper);
         } catch (DataAccessException e) {
             throw new BillingReportByCompetitionException(String.format("error Select visit_history: tenantID=%d, competitionID=%s", tenantId, comp.getId()), e);
         }
@@ -1093,7 +1093,7 @@ public class Application {
                         row.setUpdatedAt(new Date(rs.getLong("updated_at")));
                         return row;
                     };
-                    tenant = this.adminDb.queryForObject("SELECT * FROM tenant WHERE id = :tenant_id", source, mapper);
+                    tenant = this.jdbcTemplate.queryForObject("SELECT * FROM tenant WHERE id = :tenant_id", source, mapper);
                 }
 
                 {
@@ -1104,7 +1104,7 @@ public class Application {
                             .addValue("created_at", now.getTime())
                             .addValue("updated_at", now.getTime());
                     String sql = "INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (:player_id, :tenant_id, :competition_id, :created_at, :updated_at)";
-                    this.adminDb.update(sql, source);
+                    this.jdbcTemplate.update(sql, source);
                 }
 
                 List<PlayerScoreRow> pss = new ArrayList<>();
