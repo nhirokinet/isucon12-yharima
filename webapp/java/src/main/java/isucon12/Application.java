@@ -252,10 +252,11 @@ public class Application {
         // テナントの存在確認
         SqlParameterSource source = new MapSqlParameterSource().addValue("name", tenantName);
         RowMapper<TenantRow> mapper = (rs, i) -> {
-            TenantRow row = new TenantRow();
+            TenantRow row = new TenantRow(
+                rs.getString("name"),
+                rs.getString("display_name")
+            );
             row.setId(rs.getLong("id"));
-            row.setName(rs.getString("name"));
-            row.setDisplayName(rs.getString("display_name"));
             row.setCreatedAt(new Date(rs.getLong("created_at")));
             row.setUpdatedAt(new Date(rs.getLong("updated_at")));
             return row;
@@ -478,11 +479,11 @@ public class Application {
         // を合計したものを
         // テナントの課金とする
         RowMapper<TenantRow> mapper = (rs, i) -> {
-            TenantRow row = new TenantRow();
-            row.setId(rs.getLong("t.id"));
-            row.setName(rs.getString("t.name"));
-            row.setDisplayName(rs.getString("t.display_name"));
-
+            TenantRow row = new TenantRow(
+                rs.getString("name"),
+                rs.getString("display_name")
+            );
+            row.setId(rs.getLong("id"));
             row.setCreatedAt(new Date(rs.getLong("created_at")));
             row.setUpdatedAt(new Date(rs.getLong("updated_at")));
             return row;
@@ -490,10 +491,7 @@ public class Application {
 
         List<TenantRow> tenantRows;
         try {
-            tenantRows = this.jdbcTemplate.query(
-                "SELECT t.id, t.name, t.display_name, c.id FROM tenant t, competition c WHERE t.id = c.tenant_id ORDER BY t.id DESC",
-                mapper
-            );
+            tenantRows = this.jdbcTemplate.query("SELECT * FROM tenant ORDER BY id DESC", mapper);
         } catch (DataAccessException e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error Select tenant: ", e);
         }
@@ -641,11 +639,12 @@ public class Application {
                 .addValue("id", id)
                 .addValue("tenant_id", v.getTenantId())
                 .addValue("title", title)
+                .addValue("finished_at", null)
                 .addValue("created_at", now)
                 .addValue("updated_at", now);
 
             this.jdbcTemplate.update(
-                "INSERT INTO competition (id, tenant_id, title, created_at, updated_at) VALUES (:id, :tenant_id, :title, :created_at, :updated_at)",
+                "INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (:id, :tenant_id, :title, :finished_at, :created_at, :updated_at)",
                 src
             );
 
@@ -913,10 +912,11 @@ public class Application {
                     SqlParameterSource source = new MapSqlParameterSource()
                             .addValue("tenant_id", v.getTenantId());
                     RowMapper<TenantRow> mapper = (rs, i) -> {
-                        TenantRow row = new TenantRow();
+                        TenantRow row = new TenantRow(
+                            rs.getString("name"),
+                            rs.getString("display_name")
+                        );
                         row.setId(rs.getLong("id"));
-                        row.setName(rs.getString("name"));
-                        row.setDisplayName(rs.getString("display_name"));
                         row.setCreatedAt(new Date(rs.getLong("created_at")));
                         row.setUpdatedAt(new Date(rs.getLong("updated_at")));
                         return row;
