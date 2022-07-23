@@ -2,6 +2,10 @@
 
 set -eux
 
+# copy
+sudo webapp/sql/competition-and-player.sql /home/isucon/webapp/sql/competition-and-player.sql
+sudo webapp/sql/init.sh /home/isucon/webapp/sql/init.sh
+
 # nginx
 sudo cp etc/nginx/nginx.conf /etc/nginx/nginx.conf
 
