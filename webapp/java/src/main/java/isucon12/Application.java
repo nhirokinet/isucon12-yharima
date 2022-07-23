@@ -582,7 +582,7 @@ public class Application {
         try {
             for (String displayName : displayNames) {
                 String id = this.dispenseID();
-                java.sql.Date now = new java.sql.Date(new Date().getTime());
+                Date now = new Date();
 
                 SqlParameterSource source = new MapSqlParameterSource()
                     .addValue("id", id)
@@ -686,7 +686,7 @@ public class Application {
                 throw new WebException(HttpStatus.NOT_FOUND, "competition not found ");
             }
 
-            java.sql.Date now = new java.sql.Date(new Date().getTime());
+            long now = new Date().getTime();
             SqlParameterSource src = new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("finished_at", now)
