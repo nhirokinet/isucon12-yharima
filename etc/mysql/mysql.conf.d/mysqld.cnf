@@ -76,3 +76,28 @@ log_error = /var/log/mysql/error.log
 max_binlog_size   = 100M
 # binlog_do_db		= include_database_name
 # binlog_ignore_db	= include_database_name
+
+innodb_buffer_pool_size = 2G
+innodb_log_file_size = 256M
+innodb_log_files_in_group = 4
+
+# テーブルがbuffer poolに収まる程度ならO_DIRECTで
+innodb_flush_method = O_DIRECT
+
+# logファイルのflushもディスクflushも毎秒1回(transactionがcommitされてもしない)
+innodb_flush_log_at_trx_commit = 0
+
+# 二重書き込みを停止
+innodb_doublewrite = 0
+
+# チェックサムの計算を省略
+innodb_checksum_algorithm = none
+
+# トランザクション分離レベルをクソ化する
+transaction-isolation = READ-COMMITTED
+
+# TODO: 8.0+
+# deadlock detectionを無効化
+# https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_deadlock_detect
+#innodb_deadlock_detect = on
+innodb_deadlock_detect = off
