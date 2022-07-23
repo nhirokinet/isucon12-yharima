@@ -17,6 +17,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -40,7 +41,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -159,9 +159,9 @@ public class Application {
         }
 
         Cookie cookie = Stream.of(req.getCookies())
-                .filter(c -> c.getName().equals(COOKIE_NAME))
-                .findFirst()
-                .orElseThrow(() -> new WebException(HttpStatus.UNAUTHORIZED, String.format("cookie %s is not found", COOKIE_NAME)));
+            .filter(c -> c.getName().equals(COOKIE_NAME))
+            .findFirst()
+            .orElseThrow(() -> new WebException(HttpStatus.UNAUTHORIZED, String.format("cookie %s is not found", COOKIE_NAME)));
 
         String token = cookie.getValue();
 
@@ -177,12 +177,12 @@ public class Application {
         }
 
         switch (role) {
-        case ROLE_ADMIN:
-        case ROLE_ORGANIZER:
-        case ROLE_PLAYER:
-            break;
-        default:
-            throw new WebException(HttpStatus.UNAUTHORIZED, String.format("invalid token: %s is invalid role: %s", role, token));
+            case ROLE_ADMIN:
+            case ROLE_ORGANIZER:
+            case ROLE_PLAYER:
+                break;
+            default:
+                throw new WebException(HttpStatus.UNAUTHORIZED, String.format("invalid token: %s is invalid role: %s", role, token));
         }
 
         List<String> audiences = decodedJwt.getAudience();
@@ -215,9 +215,9 @@ public class Application {
     private RSAPublicKey readPublicKeyFromFile(String filePath) {
         try {
             String pem = Files.readAllLines(Paths.get(filePath)).stream()
-                    .filter(r -> !r.startsWith("-----BEGIN PUBLIC KEY-----"))
-                    .filter(r -> !r.startsWith("-----END PUBLIC KEY-----"))
-                    .collect(Collectors.joining());
+                .filter(r -> !r.startsWith("-----BEGIN PUBLIC KEY-----"))
+                .filter(r -> !r.startsWith("-----END PUBLIC KEY-----"))
+                .collect(Collectors.joining());
             X509EncodedKeySpec spec = new X509EncodedKeySpec(Base64.getDecoder().decode(pem));
             return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
         } catch (IOException e) {
@@ -277,7 +277,7 @@ public class Application {
     }
 
     // 参加者を取得する
-    private PlayerRow retrievePlayer(Long tenantId, String id) {
+    private PlayerRow retrievePlayer(Long tenantId, String id) throws RetrievePlayerException {
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("id", id);
         params.put("tenant_id", tenantId);
@@ -293,26 +293,39 @@ public class Application {
             return row;
         };
 
-        return jdbcTemplate.queryForObject("SELECT * FROM player WHERE id = :id AND tenant_id = :tenant_id", params, mapper);
+        PlayerRow pr;
+        try {
+            pr = jdbcTemplate.queryForObject("SELECT * FROM player WHERE id = :id AND tenant_id = :tenant_id", params, mapper);
+        } catch (IncorrectResultSizeDataAccessException irsdae) {
+            return null;
+        } catch (Exception e) {
+            throw new RetrievePlayerException(String.format("error Select Player: id=%s, ", id), e);
+        }
+        return pr;
     }
 
     // 参加者を認可する
     // 参加者向けAPIで呼ばれる
     private void authorizePlayer(Long tenantId, String id) throws AuthorizePlayerException {
-        PlayerRow player = this.retrievePlayer(tenantId, id);
-        if (player == null) {
-            throw new AuthorizePlayerException(HttpStatus.UNAUTHORIZED, String.format("player not found: id=%s", id));
-        }
+        PlayerRow player;
+        try {
+            player = this.retrievePlayer(tenantId, id);
+            if (player == null) {
+                throw new AuthorizePlayerException(HttpStatus.UNAUTHORIZED, String.format("player not found: id=%s", id));
+            }
 
-        if (player.getIsDisqualified()) {
-            throw new AuthorizePlayerException(HttpStatus.FORBIDDEN, String.format("player is disqualified: id=%s", id));
+            if (player.getIsDisqualified()) {
+                throw new AuthorizePlayerException(HttpStatus.FORBIDDEN, String.format("player is disqualified: id=%s", id));
+            }
+        } catch (RetrievePlayerException e) {
+            throw new AuthorizePlayerException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
 
     // 大会を取得する
     private CompetitionRow retrieveCompetition(long tenantId, String id) throws RetrieveCompetitionException {
         List<CompetitionRow> cr = this.jdbcTemplate2.query("SELECT * FROM competition WHERE id = '" + id + "' AND tenant_id = " + tenantId, competitionRowMapper);
-        if(cr.isEmpty()) {
+        if (cr.isEmpty()) {
             return null;
         }
         return cr.get(0);
@@ -334,10 +347,10 @@ public class Application {
 
         Date now = new Date();
         SqlParameterSource source = new MapSqlParameterSource()
-                .addValue("name", name)
-                .addValue("display_name", displayName)
-                .addValue("created_at", now.getTime())
-                .addValue("updated_at", now.getTime());
+            .addValue("name", name)
+            .addValue("display_name", displayName)
+            .addValue("created_at", now.getTime())
+            .addValue("updated_at", now.getTime());
         GeneratedKeyHolder holder = new GeneratedKeyHolder();
         try {
             this.jdbcTemplate.update("INSERT INTO tenant (name, display_name, created_at, updated_at) VALUES (:name, :display_name, :created_at, :updated_at)", source, holder);
@@ -387,8 +400,8 @@ public class Application {
         }
 
         SqlParameterSource source = new MapSqlParameterSource()
-                .addValue("tenant_id", tenantId)
-                .addValue("competition_id", comp.getId());
+            .addValue("tenant_id", tenantId)
+            .addValue("competition_id", comp.getId());
         RowMapper<VisitHistorySummaryRow> mapper = (rs, i) -> {
             VisitHistorySummaryRow row = new VisitHistorySummaryRow();
             row.setPlayerId(rs.getString("player_id"));
@@ -432,12 +445,12 @@ public class Application {
                 if (this.isValidFinishedAt(comp.getFinishedAt())) {
                     for (Map.Entry<String, String> entry : billingMap.entrySet()) {
                         switch (entry.getValue()) {
-                        case "player":
-                            playerCount++;
-                            break;
-                        case "visitor":
-                            visitorCount++;
-                            break;
+                            case "player":
+                                playerCount++;
+                                break;
+                            case "visitor":
+                                visitorCount++;
+                                break;
                         }
                     }
                 }
@@ -572,12 +585,12 @@ public class Application {
                 java.sql.Date now = new java.sql.Date(new Date().getTime());
 
                 SqlParameterSource source = new MapSqlParameterSource()
-                        .addValue("id", id)
-                        .addValue("tenant_id", v.getTenantId())
-                        .addValue("display_name", displayName)
-                        .addValue("is_disqualified", false)
-                        .addValue("created_at", now.getTime())
-                        .addValue("updated_at", now.getTime());
+                    .addValue("id", id)
+                    .addValue("tenant_id", v.getTenantId())
+                    .addValue("display_name", displayName)
+                    .addValue("is_disqualified", false)
+                    .addValue("created_at", now.getTime())
+                    .addValue("updated_at", now.getTime());
                 String sql = "INSERT INTO player (id, tenant_id, display_name, is_disqualified, created_at, updated_at) VALUES (:id, :tenant_id, :display_name, :is_disqualified, :created_at, :updated_at)";
                 this.jdbcTemplate.update(sql, source);
 
@@ -605,10 +618,10 @@ public class Application {
         try {
             java.sql.Date now = new java.sql.Date(new Date().getTime());
             SqlParameterSource source = new MapSqlParameterSource()
-                    .addValue("is_disqualified", true)
-                    .addValue("updated_at", now)
-                    .addValue("id", playerId)
-                    .addValue("tenant_id", v.getTenantId());
+                .addValue("is_disqualified", true)
+                .addValue("updated_at", now)
+                .addValue("id", playerId)
+                .addValue("tenant_id", v.getTenantId());
             String sql = "UPDATE player SET is_disqualified = :is_disqualified, updated_at = :updated_at WHERE id = :id AND tenant_id = :tenanet_id)";
             this.jdbcTemplate.update(sql, source);
 
@@ -807,7 +820,6 @@ public class Application {
             throw new WebException(HttpStatus.FORBIDDEN, "role organizer required");
         }
 
-        Connection tenantDb = null;
         try {
             List<CompetitionRow> cs = this.jdbcTemplate2.query("SELECT * FROM competition WHERE tenant_id=" + v.getTenantId() + " ORDER BY created_at DESC", competitionRowMapper);
 
@@ -910,7 +922,7 @@ public class Application {
                 TenantRow tenant;
                 {
                     SqlParameterSource source = new MapSqlParameterSource()
-                            .addValue("tenant_id", v.getTenantId());
+                        .addValue("tenant_id", v.getTenantId());
                     RowMapper<TenantRow> mapper = (rs, i) -> {
                         TenantRow row = new TenantRow(
                             rs.getString("name"),
@@ -926,11 +938,11 @@ public class Application {
 
                 {
                     SqlParameterSource source = new MapSqlParameterSource()
-                            .addValue("player_id", v.getPlayerId())
-                            .addValue("tenant_id", tenant.getId())
-                            .addValue("competition_id", competitionId)
-                            .addValue("created_at", now.getTime())
-                            .addValue("updated_at", now.getTime());
+                        .addValue("player_id", v.getPlayerId())
+                        .addValue("tenant_id", tenant.getId())
+                        .addValue("competition_id", competitionId)
+                        .addValue("created_at", now.getTime())
+                        .addValue("updated_at", now.getTime());
                     String sql = "INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (:player_id, :tenant_id, :competition_id, :created_at, :updated_at)";
                     this.jdbcTemplate.update(sql, source);
                 }
@@ -1039,12 +1051,12 @@ public class Application {
     }
 
     private SuccessResult competitionsHandler(Viewer v) {
-            List<CompetitionRow> cs = this.jdbcTemplate2.query("SELECT * FROM competition WHERE tenant_id= " + v.getTenantId() + " ORDER BY created_at DESC", competitionRowMapper);
-            List<CompetitionDetail> cds = new ArrayList<>();
-            for (CompetitionRow comp : cs) {
-                cds.add(new CompetitionDetail(comp.getId(), comp.getTitle(), this.isValidFinishedAt(comp.getFinishedAt())));
-            }
-            return new SuccessResult(true, new CompetitionsHandlerResult(cds));
+        List<CompetitionRow> cs = this.jdbcTemplate2.query("SELECT * FROM competition WHERE tenant_id= " + v.getTenantId() + " ORDER BY created_at DESC", competitionRowMapper);
+        List<CompetitionDetail> cds = new ArrayList<>();
+        for (CompetitionRow comp : cs) {
+            cds.add(new CompetitionDetail(comp.getId(), comp.getTitle(), this.isValidFinishedAt(comp.getFinishedAt())));
+        }
+        return new SuccessResult(true, new CompetitionsHandlerResult(cds));
     }
 
     // 全ロール及び未認証でも使えるhandler
@@ -1076,12 +1088,16 @@ public class Application {
             return new SuccessResult(true, new MeHandlerResult(td, null, v.getRole(), true));
         }
 
-        PlayerRow p = this.retrievePlayer(v.getTenantId(), v.getPlayerId());
-        if (p == null) {
-            return new SuccessResult(true, new MeHandlerResult(td, null, ROLE_NONE, false));
-        }
+        try {
+            PlayerRow p = this.retrievePlayer(v.getTenantId(), v.getPlayerId());
+            if (p == null) {
+                return new SuccessResult(true, new MeHandlerResult(td, null, ROLE_NONE, false));
+            }
 
-        return new SuccessResult(true, new MeHandlerResult(td, new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()), v.getRole(), true));
+            return new SuccessResult(true, new MeHandlerResult(td, new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()), v.getRole(), true));
+        } catch (RetrievePlayerException e) {
+            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
+        }
     }
 
     private boolean isValidFinishedAt(Date finishedAt) {
