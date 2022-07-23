@@ -1,41 +1,13 @@
 package isucon12;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.security.KeyFactory;
-import java.security.NoSuchAlgorithmException;
-import java.security.interfaces.RSAPublicKey;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.X509EncodedKeySpec;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTVerifier;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
+import isucon12.exception.*;
+import isucon12.json.*;
+import isucon12.model.*;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,55 +24,29 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.auth0.jwt.JWT;
-import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.algorithms.Algorithm;
-import com.auth0.jwt.exceptions.JWTVerificationException;
-import com.auth0.jwt.interfaces.DecodedJWT;
-
-import isucon12.exception.AuthorizePlayerException;
-import isucon12.exception.BillingReportByCompetitionException;
-import isucon12.exception.DatabaseException;
-import isucon12.exception.DispenseIdException;
-import isucon12.exception.RetrieveCompetitionException;
-import isucon12.exception.RetrievePlayerException;
-import isucon12.exception.RetrieveTenantRowFromHeaderException;
-import isucon12.exception.WebException;
-import isucon12.json.BillingHandlerResult;
-import isucon12.json.BillingReport;
-import isucon12.json.CompetitionDetail;
-import isucon12.json.CompetitionRank;
-import isucon12.json.CompetitionRankingHandlerResult;
-import isucon12.json.CompetitionsAddHandlerResult;
-import isucon12.json.CompetitionsHandlerResult;
-import isucon12.json.InitializeHandlerResult;
-import isucon12.json.MeHandlerResult;
-import isucon12.json.PlayerDetail;
-import isucon12.json.PlayerDisqualifiedHandlerResult;
-import isucon12.json.PlayerHandlerResult;
-import isucon12.json.PlayerScoreDetail;
-import isucon12.json.PlayersAddHandlerResult;
-import isucon12.json.PlayersListHandlerResult;
-import isucon12.json.ScoreHandlerResult;
-import isucon12.json.SuccessResult;
-import isucon12.json.TenantDetail;
-import isucon12.json.TenantsAddHandlerResult;
-import isucon12.json.TenantsBillingHandlerResult;
-import isucon12.model.CompetitionRow;
-import isucon12.model.PlayerRow;
-import isucon12.model.PlayerScoreRow;
-import isucon12.model.TenantRow;
-import isucon12.model.TenantWithBilling;
-import isucon12.model.Viewer;
-import isucon12.model.VisitHistorySummaryRow;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletRequest;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.X509EncodedKeySpec;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @SpringBootApplication
 @RestController
@@ -141,11 +87,31 @@ public class Application {
     @Value("${ISUCON_ADMIN_HOSTNAME:admin.t.isucon.dev}")
     private String ISUCON_ADMIN_HOSTNAME;
 
-    private RowMapper<CompetitionRow> competitionRowMapper = (rs, i) -> new CompetitionRow(
+    private final RowMapper<CompetitionRow> competitionRowMapper = (rs, i) -> new CompetitionRow(
         rs.getLong("id"),
         rs.getString("name"),
         rs.getString("display_name"),
         new Date(rs.getLong("finished_at")),
+        new Date(rs.getLong("created_at")),
+        new Date(rs.getLong("updated_at"))
+    );
+
+    private final RowMapper<PlayerScoreRow> playerScoreRowMapper = (rs, rowNum) -> new PlayerScoreRow(
+        rs.getLong("tenant_id"),
+        rs.getString("id"),
+        rs.getString("player_id"),
+        rs.getString("competition_id"),
+        rs.getLong("score"),
+        rs.getLong("row_num"),
+        new Date(rs.getLong("created_at")),
+        new Date(rs.getLong("updated_at"))
+    );
+
+    private final RowMapper<PlayerRow> playerRowMapper = (rs, rowNum) -> new PlayerRow(
+        rs.getLong("tenant_id"),
+        rs.getString("id"),
+        rs.getString("display_name"),
+        rs.getBoolean("is_disqualified"),
         new Date(rs.getLong("created_at")),
         new Date(rs.getLong("updated_at"))
     );
@@ -332,17 +298,13 @@ public class Application {
     // 参加者を認可する
     // 参加者向けAPIで呼ばれる
     private void authorizePlayer(Long tenantId, String id) throws AuthorizePlayerException {
-        try {
-            PlayerRow player = this.retrievePlayer(tenantId, id);
-            if (player == null) {
-                throw new AuthorizePlayerException(HttpStatus.UNAUTHORIZED, String.format("player not found: id=%s", id));
-            }
+        PlayerRow player = this.retrievePlayer(tenantId, id);
+        if (player == null) {
+            throw new AuthorizePlayerException(HttpStatus.UNAUTHORIZED, String.format("player not found: id=%s", id));
+        }
 
-            if (player.getIsDisqualified()) {
-                throw new AuthorizePlayerException(HttpStatus.FORBIDDEN, String.format("player is disqualified: id=%s", id));
-            }
-        } catch (RetrievePlayerException e) {
-            throw new AuthorizePlayerException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
+        if (player.getIsDisqualified()) {
+            throw new AuthorizePlayerException(HttpStatus.FORBIDDEN, String.format("player is disqualified: id=%s", id));
         }
     }
 
@@ -454,15 +416,10 @@ public class Application {
         synchronized (this) {
             try {
                 // スコアを登録した参加者のIDを取得する
-                List<String> scoredPlayerIDs = new ArrayList<>();
-                PreparedStatement ps = tenantDb.prepareStatement("SELECT DISTINCT(player_id) AS player_id FROM player_score WHERE tenant_id = ? AND competition_id = ?");
-                ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-                ps.setLong(1, tenantId);
-                ps.setString(2, competitionId);
-                ResultSet rs = ps.executeQuery();
-                while (rs.next()) {
-                    scoredPlayerIDs.add(rs.getString("player_id"));
-                }
+                List<String> scoredPlayerIDs = this.jdbcTemplate2.queryForList(
+                    "SELECT DISTINCT(player_id) AS player_id FROM player_score WHERE tenant_id = " + tenantId + " AND competition_id = " + competitionId + " AND deleted=0",
+                    String.class
+                );
 
                 for (String pid : scoredPlayerIDs) {
                     // スコアが登録されている参加者
@@ -492,7 +449,7 @@ public class Application {
                 br.setBillingVisitorYen(10 * visitorCount); // ランキングを閲覧だけした(スコアを登録していない)参加者は10円
                 br.setBillingYen(100 * playerCount + 10 * visitorCount);
                 return br;
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 throw new BillingReportByCompetitionException(String.format("error Select count player_score: tenantID=%d, competitionID=%s, ", tenantId, competitionId), e);
             }
         }
@@ -584,21 +541,10 @@ public class Application {
         }
 
         try {
-            List<PlayerRow> pls = new ArrayList<>();
-            tenantDb = this.connectToTenantDB(v.getTenantId());
-            PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM player WHERE tenant_id=? ORDER BY created_at DESC");
-            ps.setLong(1, v.getTenantId());
-            ResultSet rs = ps.executeQuery();
-
-            while (rs.next()) {
-                pls.add(new PlayerRow(
-                        rs.getLong("tenant_id"),
-                        rs.getString("id"),
-                        rs.getString("display_name"),
-                        rs.getBoolean("is_disqualified"),
-                        new Date(rs.getLong("created_at")),
-                        new Date(rs.getLong("updated_at"))));
-            }
+            List<PlayerRow> pls = this.jdbcTemplate2.query(
+                "SELECT * FROM player WHERE tenant_id = " + v.getTenantId() + " ORDER BY created_at DESC",
+                playerRowMapper
+            );
 
             List<PlayerDetail> pds = new ArrayList<>();
             for (PlayerRow p : pls) {
@@ -606,9 +552,7 @@ public class Application {
             }
 
             return new SuccessResult(true, new PlayersListHandlerResult(pds));
-        } catch (DatabaseException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error Select player: ", e);
         }
     }
@@ -643,13 +587,9 @@ public class Application {
                 pds.add(new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()));
             }
             return new SuccessResult(true, new PlayersAddHandlerResult(pds));
-        } catch (DatabaseException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
         } catch (DispenseIdException e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error dispenseID: ", e);
-        } catch (RetrievePlayerException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDB: ", e);
         }
     }
@@ -680,12 +620,8 @@ public class Application {
             }
 
             return new SuccessResult(true, new PlayerDisqualifiedHandlerResult(new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified())));
-        } catch (DatabaseException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, String.format("error Update player id=%s: ", playerId), e);
-        } catch (RetrievePlayerException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
         }
     }
 
@@ -820,44 +756,44 @@ public class Application {
                 }
 
                 {
-                    PreparedStatement ps = tenantDb.prepareStatement("DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?");
-                    ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-                    ps.setLong(1, v.getTenantId());
-                    ps.setString(2, competitionId);
-                    ps.execute();
+                    MapSqlParameterSource src = new MapSqlParameterSource()
+                        .addValue("tid", v.getTenantId())
+                        .addValue("cid", competitionId);
+                    this.jdbcTemplate.update(
+                        "UPDATE player_score SET deleted=1 WHERE tenant_id = :tid AND competition_id = :cid",
+                        src
+                    );
                 }
 
                 {
                     for (PlayerScoreRow psr : playerScoreRows) {
-                        PreparedStatement ps = tenantDb.prepareStatement("INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                        ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-                        ps.setString(1, psr.getId());
-                        ps.setLong(2, psr.getTenantId());
-                        ps.setString(3, psr.getPlayerId());
-                        ps.setString(4, psr.getCompetitionId());
-                        ps.setLong(5, psr.getScore());
-                        ps.setLong(6, psr.getRowNum());
-                        ps.setDate(7, new java.sql.Date(psr.getCreatedAt().getTime()));
-                        ps.setDate(8, new java.sql.Date(psr.getUpdatedAt().getTime()));
-                        ps.executeUpdate();
+                        MapSqlParameterSource src = new MapSqlParameterSource()
+                            .addValue("id", psr.getId())
+                            .addValue("tid", psr.getTenantId())
+                            .addValue("pid", psr.getPlayerId())
+                            .addValue("cid", psr.getCompetitionId())
+                            .addValue("score", psr.getScore())
+                            .addValue("row_num", psr.getRowNum())
+                            .addValue("cat", new java.sql.Date(psr.getCreatedAt().getTime()))
+                            .addValue("uat", new java.sql.Date(psr.getUpdatedAt().getTime()));
+
+                        this.jdbcTemplate.update(
+                            "INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tid, :pid, :cid, :score, :row_num, :cat, :uat)",
+                            src
+                        );
                     }
                 }
-
                 return new SuccessResult(true, new ScoreHandlerResult((long) playerScoreRows.size()));
-            } catch (DatabaseException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
-            } catch (SQLException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb.player_score: ", e);
             } catch (RetrieveCompetitionException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrieveCompetition: ", e);
             } catch (IOException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error new BufferdReader: ", e);
-            } catch (RetrievePlayerException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
             } catch (NumberFormatException e) {
                 throw new WebException(HttpStatus.BAD_REQUEST, "error Long.valueOf(scoreStr): ", e);
             } catch (DispenseIdException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error dispenseID: ", e);
+            } catch (Exception e) {
+                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb.player_score: ", e);
             }
         }
     }
@@ -907,7 +843,7 @@ public class Application {
         // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
         synchronized (this) {
 
-            try (Connection tenantDb = this.connectToTenantDB(v.getTenantId());) {
+            try {
                 this.authorizePlayer(v.getTenantId(), v.getPlayerId());
 
                 PlayerRow p = this.retrievePlayer(v.getTenantId(), playerId);
@@ -915,46 +851,20 @@ public class Application {
                     throw new WebException(HttpStatus.NOT_FOUND, String.format("player not found: %s", playerId));
                 }
 
-                List<CompetitionRow> cs = new ArrayList<>();
-                {
-                    PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC");
-                    ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-                    ps.setLong(1, v.getTenantId());
-                    ResultSet resultSet = ps.executeQuery();
-
-                    while (resultSet.next()) {
-                        cs.add(new CompetitionRow(
-                                resultSet.getLong("tenant_id"),
-                                resultSet.getString("id"),
-                                resultSet.getString("title"),
-                                new Date(resultSet.getLong("finished_at")),
-                                new Date(resultSet.getLong("created_at")),
-                                new Date(resultSet.getLong("updated_at"))));
-                    }
-                }
+                List<CompetitionRow> cs = this.jdbcTemplate2.query(
+                    "SELECT * FROM competition WHERE tenant_id = " + v.getTenantId() + " ORDER BY created_at ASC",
+                    competitionRowMapper
+                );
 
                 List<PlayerScoreRow> pss = new ArrayList<>();
                 for (CompetitionRow c : cs) {
                     // 最後にCSVに登場したスコアを採用する = row_numが一番大きいもの
-                    PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? AND player_id = ? ORDER BY row_num DESC LIMIT 1");
-                    ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-                    ps.setLong(1, v.getTenantId());
-                    ps.setString(2, c.getId());
-                    ps.setString(3, p.getId());
-                    ResultSet rs = ps.executeQuery();
-                    if (!rs.isBeforeFirst()) {
-                        // 行がない = スコアが記録されてない
-                        continue;
-                    }
-                    pss.add(new PlayerScoreRow(
-                            rs.getLong("tenant_id"),
-                            rs.getString("id"),
-                            rs.getString("player_id"),
-                            rs.getString("competition_id"),
-                            rs.getLong("score"),
-                            rs.getLong("row_num"),
-                            new Date(rs.getLong("created_at")),
-                            new Date(rs.getLong("updated_at"))));
+                    pss.addAll(
+                        this.jdbcTemplate2.query(
+                            "SELECT * FROM player_score WHERE tenant_id = " + v.getTenantId() + " AND competition_id = " + c.getId() + " AND player_id = " + p.getId() + " ORDER BY row_num DESC LIMIT 1",
+                            playerScoreRowMapper
+                        )
+                    );
                 }
 
                 List<PlayerScoreDetail> psds = new ArrayList<>();
@@ -964,18 +874,14 @@ public class Application {
                 }
 
                 return new SuccessResult(true, new PlayerHandlerResult(new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()), psds));
-            } catch (DatabaseException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
-            } catch (SQLException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb SQL: ", e);
             } catch (NumberFormatException e) {
                 throw new WebException(HttpStatus.BAD_REQUEST, "error Long.valueOf(scoreStr): ", e);
-            } catch (RetrievePlayerException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
             } catch (AuthorizePlayerException e) {
                 throw new WebException(e.getHttpStatus(), e);
             } catch (RetrieveCompetitionException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrieveCompetition: ", e);
+            } catch (Exception e) {
+                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb SQL: ", e);
             }
         }
     }
@@ -992,7 +898,7 @@ public class Application {
 
         // player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
         synchronized (this) {
-            try (Connection tenantDb = this.connectToTenantDB(v.getTenantId());) {
+            try {
                 this.authorizePlayer(v.getTenantId(), v.getPlayerId());
 
                 // 大会の存在確認
@@ -1002,7 +908,7 @@ public class Application {
                 }
 
                 Date now = new Date();
-                TenantRow tenant = null;
+                TenantRow tenant;
                 {
                     SqlParameterSource source = new MapSqlParameterSource()
                             .addValue("tenant_id", v.getTenantId());
@@ -1029,24 +935,12 @@ public class Application {
                     this.jdbcTemplate.update(sql, source);
                 }
 
-                List<PlayerScoreRow> pss = new ArrayList<>();
+                List<PlayerScoreRow> pss;
                 {
-                    PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM player_score WHERE tenant_id = ? AND competition_id = ? ORDER BY row_num DESC");
-                    ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-                    ps.setLong(1, tenant.getId());
-                    ps.setString(2, competitionId);
-                    ResultSet rs = ps.executeQuery();
-                    while (rs.next()) {
-                        pss.add(new PlayerScoreRow(
-                                rs.getLong("tenant_id"),
-                                rs.getString("id"),
-                                rs.getString("player_id"),
-                                rs.getString("competition_id"),
-                                rs.getLong("score"),
-                                rs.getLong("row_num"),
-                                new Date(rs.getLong("created_at")),
-                                new Date(rs.getLong("updated_at"))));
-                    }
+                    pss = this.jdbcTemplate2.query(
+                        "SELECT * FROM player_score WHERE tenant_id = " + tenant.getId() + " AND competition_id = " + competitionId + " AND deleted=0 ORDER BY row_num DESC",
+                        playerScoreRowMapper
+                    );
                 }
 
                 List<CompetitionRank> ranks = new ArrayList<>();
@@ -1102,16 +996,12 @@ public class Application {
                 return new SuccessResult(true, new CompetitionRankingHandlerResult(new CompetitionDetail(comp.getId(), comp.getTitle(), this.isValidFinishedAt(comp.getFinishedAt())), pagedRanks));
             } catch (DataAccessException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error admindb SQL: ", e);
-            } catch (DatabaseException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
-            } catch (SQLException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb SQL: ", e);
-            } catch (RetrievePlayerException e) {
-                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
             } catch (AuthorizePlayerException e) {
                 throw new WebException(e.getHttpStatus(), e);
             } catch (RetrieveCompetitionException e) {
                 throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrieveCompetition: ", e);
+            } catch (Exception e) {
+                throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error tenantdb SQL: ", e);
             }
         }
     }
@@ -1128,11 +1018,11 @@ public class Application {
 
         try {
             this.authorizePlayer(v.getTenantId(), v.getPlayerId());
-            return this.competitionsHandler(v, tenantDb);
-        } catch (DatabaseException | SQLException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
+            return this.competitionsHandler(v);
         } catch (AuthorizePlayerException e) {
             throw new WebException(e.getHttpStatus(), e);
+        } catch (Exception e) {
+            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
         }
     }
 
@@ -1186,16 +1076,12 @@ public class Application {
             return new SuccessResult(true, new MeHandlerResult(td, null, v.getRole(), true));
         }
 
-        try {
-            PlayerRow p = this.retrievePlayer(v.getTenantId(), v.getPlayerId());
-            if (p == null) {
-                return new SuccessResult(true, new MeHandlerResult(td, null, ROLE_NONE, false));
-            }
-
-            return new SuccessResult(true, new MeHandlerResult(td, new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()), v.getRole(), true));
-        } catch (RetrievePlayerException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
+        PlayerRow p = this.retrievePlayer(v.getTenantId(), v.getPlayerId());
+        if (p == null) {
+            return new SuccessResult(true, new MeHandlerResult(td, null, ROLE_NONE, false));
         }
+
+        return new SuccessResult(true, new MeHandlerResult(td, new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()), v.getRole(), true));
     }
 
     private boolean isValidFinishedAt(Date finishedAt) {
