@@ -616,7 +616,7 @@ public class Application {
         }
 
         try {
-            java.sql.Date now = new java.sql.Date(new Date().getTime());
+            long now = new Date().getTime();
             SqlParameterSource source = new MapSqlParameterSource()
                 .addValue("is_disqualified", true)
                 .addValue("updated_at", now)
