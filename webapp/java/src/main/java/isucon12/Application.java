@@ -88,9 +88,9 @@ public class Application {
     private String ISUCON_ADMIN_HOSTNAME;
 
     private final RowMapper<CompetitionRow> competitionRowMapper = (rs, i) -> new CompetitionRow(
-        rs.getLong("id"),
-        rs.getString("name"),
-        rs.getString("display_name"),
+        rs.getLong("tenant_id"),
+        rs.getString("id"),
+        rs.getString("title"),
         new Date(rs.getLong("finished_at")),
         new Date(rs.getLong("created_at")),
         new Date(rs.getLong("updated_at"))
