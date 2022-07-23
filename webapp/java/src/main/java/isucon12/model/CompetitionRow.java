@@ -10,6 +10,9 @@ public class CompetitionRow {
     private Date createdAt;
     private Date updatedAt;
 
+    public CompetitionRow(){
+    };
+
     public CompetitionRow(Long tenantId, String id, String title, Date finishedAt, Date createdAt, Date updatedAt) {
         super();
         this.tenantId = tenantId;

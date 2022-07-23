@@ -46,6 +46,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -107,6 +108,9 @@ public class Application {
     @Autowired
     private NamedParameterJdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate2;
+
     Logger logger = LoggerFactory.getLogger(Application.class);
 
     private static final String TENANT_DB_SCHEMA_FILE_PATH = "../sql/tenant/10_schema.sql";
@@ -136,42 +140,6 @@ public class Application {
     private String ISUCON_BASE_HOSTNAME;
     @Value("${ISUCON_ADMIN_HOSTNAME:admin.t.isucon.dev}")
     private String ISUCON_ADMIN_HOSTNAME;
-
-//    public String tenantDBPath(long id) {
-//        return Paths.get(ISUCON_TENANT_DB_DIR).resolve(String.format("%d.db", id)).toString();
-//    }
-
-//    public Connection connectToTenantDB(long id) throws DatabaseException {
-//        String tenantDBPath = this.tenantDBPath(id);
-//        if (!new File(tenantDBPath).exists()) {
-//            throw new DatabaseException(String.format("failed to open tenant DB: %s", tenantDBPath));
-//        }
-//
-//        try {
-//            return DriverManager.getConnection(String.format("jdbc:log4jdbc:sqlite:%s", tenantDBPath));
-//        } catch (SQLException e) {
-//            throw new DatabaseException(String.format("failed to open tenant DB: %s", e.getMessage()));
-//        }
-//    }
-
-//    public void createTenantDB(long id) {
-//        String tenantDBPath = this.tenantDBPath(id);
-//
-//        try {
-//            Process p = new ProcessBuilder().command("sh", "-c", String.format("sqlite3 %s < %s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH)).start();
-//            int exitCode = p.waitFor();
-//            p.destroy();
-//            if (exitCode != 0) {
-//                InputStreamReader inputStreamReader = new InputStreamReader(p.getErrorStream());
-//                Stream<String> streamOfString = new BufferedReader(inputStreamReader).lines();
-//                String message = streamOfString.collect(Collectors.joining());
-//
-//                throw new RuntimeException(String.format("failed to exec sqlite3 %s < %s, out=%s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH, message));
-//            }
-//        } catch (IOException | InterruptedException e) {
-//            throw new RuntimeException(String.format("failed to exec sqlite3 %s < %s, %s", tenantDBPath, TENANT_DB_SCHEMA_FILE_PATH, e));
-//        }
-//    }
 
     // システム全体で一意なIDを生成する
     public String dispenseID() throws DispenseIdException {
@@ -433,10 +401,6 @@ public class Application {
         }
 
         long tenantId = holder.getKey().longValue();
-        // NOTE: 先にadminDBに書き込まれることでこのAPIの処理中に
-        //       /api/admin/tenants/billingにアクセスされるとエラーになりそう
-        //       ロックなどで対処したほうが良さそう
-        this.createTenantDB(tenantId);
 
         TenantWithBilling twb = new TenantWithBilling();
         twb.setId(String.valueOf(tenantId));
@@ -565,9 +529,10 @@ public class Application {
         // テナントの課金とする
         RowMapper<TenantRow> mapper = (rs, i) -> {
             TenantRow row = new TenantRow();
-            row.setId(rs.getLong("id"));
-            row.setName(rs.getString("name"));
-            row.setDisplayName(rs.getString("display_name"));
+            row.setId(rs.getLong("t.id"));
+            row.setName(rs.getString("t.name"));
+            row.setDisplayName(rs.getString("t.display_name"));
+
             row.setCreatedAt(new Date(rs.getLong("created_at")));
             row.setUpdatedAt(new Date(rs.getLong("updated_at")));
             return row;
@@ -575,7 +540,10 @@ public class Application {
 
         List<TenantRow> tenantRows;
         try {
-            tenantRows = this.adminDb.query("SELECT * FROM tenant ORDER BY id DESC", mapper);
+            tenantRows = this.jdbcTemplate.query(
+                "SELECT t.id, t.name, t.display_name, c.id FROM tenant t, competition c WHERE t.id = c.tenant_id ORDER BY t.id DESC",
+                mapper
+            );
         } catch (DataAccessException e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error Select tenant: ", e);
         }
@@ -591,6 +559,7 @@ public class Application {
             tb.setDisplayName(t.getDisplayName());
 
             try (Connection tenantDb = this.connectToTenantDB(t.getId()); PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM competition WHERE tenant_id=?");) {
+                this.jdbcTemplate.query("SELECT * FROM competition WHERE tenant_id=?", t.getId());
                 ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
                 ps.setLong(1, t.getId());
                 ResultSet rs = ps.executeQuery();
@@ -1223,40 +1192,45 @@ public class Application {
         if (!v.getRole().equals(ROLE_ORGANIZER)) {
             throw new WebException(HttpStatus.FORBIDDEN, "role organizer required");
         }
-
-        try (Connection tenantDb = this.connectToTenantDB(v.getTenantId());) {
-            return this.competitionsHandler(v, tenantDb);
-        } catch (DatabaseException | SQLException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
-        }
+        return this.competitionsHandler(v);
     }
 
-    private SuccessResult competitionsHandler(Viewer v, Connection tenantDb) {
-        try {
-            PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC");
-            ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
-            ps.setLong(1, v.getTenantId());
-            ResultSet rs = ps.executeQuery();
+    private SuccessResult competitionsHandler(Viewer v) {
+//        try {
+            RowMapper<CompetitionRow> mapper = (rs, i) -> new CompetitionRow(
+                rs.getLong("id"),
+                rs.getString("name"),
+                rs.getString("display_name"),
+                new Date(rs.getLong("finished_at")),
+                new Date(rs.getLong("created_at")),
+                new Date(rs.getLong("updated_at"))
+            );
+            List<CompetitionRow> cs = this.jdbcTemplate2.query("SELECT * FROM competition WHERE tenant_id= " + v.getTenantId() + " ORDER BY created_at DESC", mapper);
+//            PreparedStatement ps = tenantDb.prepareStatement("SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC");
+//            ps.setQueryTimeout(SQLITE_BUSY_TIMEOUT);
+//            ps.setLong(1, v.getTenantId());
+//            ResultSet rs = ps.executeQuery();
 
-            List<CompetitionRow> cs = new ArrayList<>();
-            while (rs.next()) {
-                cs.add(new CompetitionRow(
-                        rs.getLong("tenant_id"),
-                        rs.getString("id"),
-                        rs.getString("title"),
-                        new Date(rs.getLong("finished_at")),
-                        new Date(rs.getLong("created_at")),
-                        new Date(rs.getLong("updated_at"))));
-            }
+//            List<CompetitionRow> cs = new ArrayList<>();
+//            while (rs.next()) {
+//                cs.add(new CompetitionRow(
+//                        rs.getLong("tenant_id"),
+//                        rs.getString("id"),
+//                        rs.getString("title"),
+//                        new Date(rs.getLong("finished_at")),
+//                        new Date(rs.getLong("created_at")),
+//                        new Date(rs.getLong("updated_at"))));
+//            }
 
             List<CompetitionDetail> cds = new ArrayList<>();
             for (CompetitionRow comp : cs) {
                 cds.add(new CompetitionDetail(comp.getId(), comp.getTitle(), this.isValidFinishedAt(comp.getFinishedAt())));
             }
             return new SuccessResult(true, new CompetitionsHandlerResult(cds));
-        } catch (SQLException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error Select competition: ", e);
-        }
+//        }
+//        catch (SQLException e) {
+//            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error Select competition: ", e);
+//        }
     }
 
     // 全ロール及び未認証でも使えるhandler
@@ -1288,15 +1262,13 @@ public class Application {
             return new SuccessResult(true, new MeHandlerResult(td, null, v.getRole(), true));
         }
 
-        try (Connection tenantDb = this.connectToTenantDB(v.getTenantId());) {
-            PlayerRow p = this.retrievePlayer(tenantDb, v.getPlayerId());
+        try {
+            PlayerRow p = this.retrievePlayer(v.getPlayerId());
             if (p == null) {
                 return new SuccessResult(true, new MeHandlerResult(td, null, ROLE_NONE, false));
             }
 
             return new SuccessResult(true, new MeHandlerResult(td, new PlayerDetail(p.getId(), p.getDisplayName(), p.getIsDisqualified()), v.getRole(), true));
-        } catch (DatabaseException | SQLException e) {
-            throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error connectToTenantDb: ", e);
         } catch (RetrievePlayerException e) {
             throw new WebException(HttpStatus.INTERNAL_SERVER_ERROR, "error retrievePlayer: ", e);
         }
