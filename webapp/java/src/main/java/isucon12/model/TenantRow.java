@@ -9,9 +9,6 @@ public class TenantRow {
     private Date createdAt;
     private Date updatedAt;
 
-    public TenantRow() {
-    }
-
     public TenantRow(String name, String displayName) {
         this.name = name;
         this.displayName = displayName;
