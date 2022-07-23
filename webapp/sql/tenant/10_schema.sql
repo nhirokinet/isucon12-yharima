@@ -9,7 +9,7 @@ CREATE TABLE competition (
   finished_at BIGINT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 CREATE TABLE player (
   id VARCHAR(255) NOT NULL PRIMARY KEY,
@@ -18,7 +18,7 @@ CREATE TABLE player (
   is_disqualified BOOLEAN NOT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 CREATE TABLE player_score (
   id VARCHAR(255) NOT NULL PRIMARY KEY,
@@ -29,4 +29,4 @@ CREATE TABLE player_score (
   row_num BIGINT NOT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
