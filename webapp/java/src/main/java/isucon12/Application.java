@@ -647,7 +647,7 @@ public class Application {
         }
         try {
             String id = this.dispenseID();
-            java.sql.Date now = new java.sql.Date(new Date().getTime());
+            long now = new Date().getTime();
             SqlParameterSource src = new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("tenant_id", v.getTenantId())
@@ -786,8 +786,8 @@ public class Application {
                             .addValue("cid", psr.getCompetitionId())
                             .addValue("score", psr.getScore())
                             .addValue("row_num", psr.getRowNum())
-                            .addValue("cat", new java.sql.Date(psr.getCreatedAt().getTime()))
-                            .addValue("uat", new java.sql.Date(psr.getUpdatedAt().getTime()));
+                            .addValue("cat", psr.getCreatedAt().getTime())
+                            .addValue("uat", psr.getUpdatedAt().getTime());
 
                         this.jdbcTemplate.update(
                             "INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tid, :pid, :cid, :score, :row_num, :cat, :uat)",
